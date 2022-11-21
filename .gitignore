@@ -1,0 +1,6 @@
+.DS_Store
+.ipynb_checkpoints
+.git
+__pycache__/
+.dd-biomassters/*
+data/

@@ -32,8 +32,8 @@ class BaseModel(ABC):
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
-        # self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
-        self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids[0]>0 else torch.device('cpu')  # get device name: CPU or GPU
+        self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
+        # self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids[0]>0 else torch.device('cpu')  # get device name: CPU or GPU
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)  # save all the checkpoints to save_dir
         if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
             torch.backends.cudnn.benchmark = True
@@ -84,9 +84,9 @@ class BaseModel(ABC):
         """
         if self.isTrain:
             self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
-        if not self.isTrain or opt.continue_train:
-            load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
-            self.load_networks(load_suffix)
+        # if not self.isTrain or opt.continue_train:
+        #     load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
+        #     self.load_networks(load_suffix)
         self.print_networks(opt.verbose)
 
     def eval(self):

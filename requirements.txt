@@ -7,3 +7,4 @@ torch
 torchvision
 boto3
 tifffile
+dominate

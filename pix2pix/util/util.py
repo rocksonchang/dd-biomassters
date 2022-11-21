@@ -5,8 +5,7 @@ import numpy as np
 from PIL import Image
 import os
 
-
-def tensor2im(input_image, imtype=np.uint8):
+def tensor2im(input_image, imtype=np.uint8, is_tif=False):
     """"Converts a Tensor array into a numpy image array.
 
     Parameters:
@@ -19,9 +18,17 @@ def tensor2im(input_image, imtype=np.uint8):
         else:
             return input_image
         image_numpy = image_tensor[0].cpu().float().numpy()  # convert it into a numpy array
-        if image_numpy.shape[0] == 1:  # grayscale to RGB
+        if is_tif: # take 1st channel only, rescale
+            im = image_numpy[0,:,:]
+            im[im<-9000] = 9999
+            im = im + im.min() + 1
+            im[im>9000] = 0
+            im = im*255/im.max()
+            image_numpy = np.tile(im, (3, 1, 1))
+            image_numpy = np.transpose(image_numpy, (1, 2, 0))
+        elif image_numpy.shape[0] == 1:  # grayscale to RGB
             image_numpy = np.tile(image_numpy, (3, 1, 1))
-        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+            image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
     else:  # if it is a numpy array, do nothing
         image_numpy = input_image
     return image_numpy.astype(imtype)
@@ -46,7 +53,7 @@ def diagnose_network(net, name='network'):
     print(mean)
 
 
-def save_image(image_numpy, image_path, aspect_ratio=1.0):
+def save_image(image_numpy, image_path, aspect_ratio=1.0, is_tif=False):
     """Save a numpy image to the disk
 
     Parameters:

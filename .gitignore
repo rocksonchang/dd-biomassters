@@ -2,5 +2,5 @@
 .ipynb_checkpoints
 .git
 __pycache__/
-.dd-biomassters/*
+.env/*
 data/

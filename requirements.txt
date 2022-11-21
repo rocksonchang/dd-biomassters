@@ -1,0 +1,9 @@
+pandas
+matplotlib
+Pillow
+tqdm
+scikit-learn
+torch
+torchvision
+boto3
+tifffile

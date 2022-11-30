@@ -3,6 +3,8 @@
 .git
 __pycache__/
 .env/*
-data/
+data/metadata/
+data/train_agbm/
+data/train_features/
 results/
 checkpoints/

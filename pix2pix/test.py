@@ -33,10 +33,10 @@ from models import create_model
 from util.visualizer import save_images
 from util import html
 
-try:
-    import wandb
-except ImportError:
-    print('Warning: wandb package cannot be found. The option "--use_wandb" will result in error.')
+# try:
+#     import wandb
+# except ImportError:
+#     print('Warning: wandb package cannot be found. The option "--use_wandb" will result in error.')
 
 
 if __name__ == '__main__':
@@ -72,11 +72,13 @@ if __name__ == '__main__':
             break
         model.set_input(data)  # unpack data from data loader
         model.test()           # run inference
-        visuals = model.get_current_visuals()  # get image results
+        visuals = model.get_current_visuals()  # get image results {}
         img_path = model.get_image_paths()     # get image paths
         if i % 5 == 0:  # save images to an HTML file
             print('processing (%04d)-th image... %s' % (i, img_path))
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, 
             width=opt.display_winsize, use_wandb=opt.use_wandb, 
             is_tif=True if opt.dataset_mode=='biomassters' else False)
+        model.calculate_RMSE()
+        print(i, img_path, 'RMSE:', model.loss_RMSE)
     webpage.save()  # save the HTML

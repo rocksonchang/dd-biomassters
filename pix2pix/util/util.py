@@ -4,8 +4,9 @@ import torch
 import numpy as np
 from PIL import Image
 import os
+from util import util
 
-def tensor2im(input_image, imtype=np.uint8, is_tif=False):
+def tensor2im(input_image, imtype=np.uint8):
     """"Converts a Tensor array into a numpy image array.
 
     Parameters:
@@ -18,21 +19,17 @@ def tensor2im(input_image, imtype=np.uint8, is_tif=False):
         else:
             return input_image
         image_numpy = image_tensor[0].cpu().float().numpy()  # convert it into a numpy array
-        if is_tif: # take 1st channel only, rescale
-            im = image_numpy[0,:,:]
-            im[im<-9000] = 9999
-            im = im + im.min() + 1
-            im[im>9000] = 0
-            im = im*255/im.max()
-            image_numpy = np.tile(im, (3, 1, 1))
-            image_numpy = np.transpose(image_numpy, (1, 2, 0))
-        elif image_numpy.shape[0] == 1:  # grayscale to RGB
+        if image_numpy.shape[0] == 1:  # grayscale to RGB
             image_numpy = np.tile(image_numpy, (3, 1, 1))
-            image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+        elif image_numpy.shape[0] > 3:  # multi-channel image, # take 1st channel only
+            image_numpy = np.tile(image_numpy[0,:,:], (3, 1, 1))
+        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+        # DEBUG 
+        # util.summarize_data(image_tensor[0].cpu().float().numpy(), 'tensor2im input')
+        # util.summarize_data(image_numpy, 'tensor2im output')
     else:  # if it is a numpy array, do nothing
         image_numpy = input_image
     return image_numpy.astype(imtype)
-
 
 def diagnose_network(net, name='network'):
     """Calculate and print the mean of average absolute(gradients)
@@ -53,7 +50,7 @@ def diagnose_network(net, name='network'):
     print(mean)
 
 
-def save_image(image_numpy, image_path, aspect_ratio=1.0, is_tif=False):
+def save_image(image_numpy, image_path, aspect_ratio=1.0):
     """Save a numpy image to the disk
 
     Parameters:
@@ -108,3 +105,7 @@ def mkdir(path):
     """
     if not os.path.exists(path):
         os.makedirs(path)
+
+
+def summarize_data(x, label=None):
+    print(f'{label}; type: {type(x)}, shape: {x.shape}, max: {x.max():.2f}, min: {x.min():.2f}, mean: {x.mean():.2f}, std: {x.std():.2f}')

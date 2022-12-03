@@ -20,13 +20,14 @@ class BioMasstersDataset(BaseDataset):
     SATELLITE = 'S1' # S1, S2, None
     CHIP_IS_COMPLETE = False
     CHIP_S1_IS_IMPUTABLE = True
-
+    X_AGGREGATION = 'quarterly'
+    METADATA_FILE = "./data/metadata/features_metadata_split_42.csv"
 
     def __init__(self, opt):
         BaseDataset.__init__(self, opt)
 
         # prepare metadata
-        self.metadata = pd.read_csv(f"{opt.dataroot}/metadata/features_metadata_split_42.csv",index_col=0)
+        self.metadata = pd.read_csv(self.METADATA_FILE ,index_col=0)
         condition = self.metadata.split == opt.phase
         if self.CHIP_IS_COMPLETE:
             condition &= self.metadata.is_complete
@@ -38,12 +39,12 @@ class BioMasstersDataset(BaseDataset):
             self.data = self.data.sample(opt.max_dataset_size, random_state=self.RANDOM_STATE).reset_index(drop=True)
 
         # prepare dummy values
+        self.s1_missing_value = -9999
+        self.s2_missing_value = 255
         self.dummy_s1_missing_value = np.nan
         self.dummy_s2_missing_value = 255
         self.dummy_s1_missing_img = np.ones([256,256,4])*self.dummy_s1_missing_value
         self.dummy_s2_missing_img = np.ones([256,256,11])*self.dummy_s2_missing_value
-        self.s1_missing_value = 9999
-        self.s2_missing_value = 255
 
         # prepare transforms
         self.transform_X = transforms.Compose(
@@ -66,8 +67,10 @@ class BioMasstersDataset(BaseDataset):
         """Return a data point and its metadata information.
         """
         chip_id = self.data['chip_id'].iloc[index]
-        # X_raw = self._load_chip_feature_data(chip_id)
-        X_raw = self._load_chip_feature_data_by_quarter(chip_id)
+        if self.X_AGGREGATION == 'quarterly':
+            X_raw = self._load_chip_feature_data_by_quarter(chip_id)  # quarterly aggregation
+        else:
+            X_raw = self._load_chip_feature_data(chip_id)             # no aggregation        
         y_raw = self._load_chip_target_data(chip_id)
 
         # apply transforms

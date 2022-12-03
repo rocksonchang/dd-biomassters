@@ -19,7 +19,6 @@ class BioMasstersDownloader():
 
         # prepare metadata
         self.metadata = pd.read_csv(metadata_file,index_col=0)
-        # self.metadata = self.metadata[~self.metadata.filename.isna()]
         if chip_is_complete:
             self.metadata = self.metadata[self.metadata.is_complete]
         elif is_imputable_s1:

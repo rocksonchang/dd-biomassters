@@ -77,8 +77,7 @@ if __name__ == '__main__':
         if i % 5 == 0:  # save images to an HTML file
             print('processing (%04d)-th image... %s' % (i, img_path))
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, 
-            width=opt.display_winsize, use_wandb=opt.use_wandb, 
-            is_tif=True if opt.dataset_mode=='biomassters' else False)
+            width=opt.display_winsize, use_wandb=opt.use_wandb)
         model.calculate_RMSE()
         print(i, img_path, 'RMSE:', model.loss_RMSE)
     webpage.save()  # save the HTML

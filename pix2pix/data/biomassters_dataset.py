@@ -17,16 +17,23 @@ class BioMasstersDataset(BaseDataset):
     # Y_SCALE = 63.41566
     # Y_SCALE = 1e4
     Y_SCALE = 385 # 99th percentile
+    SATELLITE = 'S1' # S1, S2, None
+    CHIP_IS_COMPLETE = False
+    CHIP_S1_IS_IMPUTABLE = True
+
 
     def __init__(self, opt):
         BaseDataset.__init__(self, opt)
 
         # prepare metadata
         self.metadata = pd.read_csv(f"{opt.dataroot}/metadata/features_metadata_split_42.csv",index_col=0)
-        # self.data = self.metadata[(self.metadata.split == opt.phase) & (self.metadata.is_complete)] \
-        #     .chip_id.drop_duplicates().reset_index(drop=True).to_frame()
-        self.data = self.metadata[(self.metadata.split == opt.phase) & (self.metadata.is_imputable_s1)] \
-            .chip_id.drop_duplicates().reset_index(drop=True).to_frame()
+        condition = self.metadata.split == opt.phase
+        if self.CHIP_IS_COMPLETE:
+            condition &= self.metadata.is_complete
+        if self.CHIP_S1_IS_IMPUTABLE:
+            condition &= self.metadata.is_imputable_s1
+        self.data = self.metadata[condition].chip_id.drop_duplicates().reset_index(drop=True).to_frame()
+
         if opt.max_dataset_size < len(self.data):
             self.data = self.data.sample(opt.max_dataset_size, random_state=self.RANDOM_STATE).reset_index(drop=True)
 
@@ -80,13 +87,18 @@ class BioMasstersDataset(BaseDataset):
         return len(self.data)
     
     def _get_chip_metadata(self, chip_id):
-        # return self.metadata[(self.metadata.chip_id==chip_id) & (self.metadata.satellite=='S1') & (self.metadata.month==5)]
-        # return self.metadata[
-        #     (self.metadata.chip_id==chip_id) 
-        #     & (self.metadata.satellite=='S1') 
-        #     & (self.metadata.month.isin([2,5,8]))
-        # ].sort_values(by='month')
-        return self.metadata[(self.metadata.chip_id==chip_id) & (self.metadata.satellite=='S1')]
+        """ Get chip metadata
+
+        Parameters:
+            chip_id (string) - chip id
+
+        Returns:
+            A dataframe containing the chip metadata, filtered according to class and runtime arguments.
+        """
+        condition = self.metadata.chip_id==chip_id
+        if self.SATELLITE:
+            condition &= self.metadata.satellite==self.SATELLITE
+        return self.metadata[condition]
     
     def _load_chip_feature_data(self, chip_id):
         img_channels = []
@@ -106,6 +118,16 @@ class BioMasstersDataset(BaseDataset):
         return np.concatenate(img_channels, axis=2)
     
     def _load_chip_feature_data_by_quarter(self, chip_id):
+        """Load chip data by quarter
+
+        Parameters:
+            chip_id (string) - chip id
+
+        Returns:
+            A tensor of dimension [H, V, num_channels, 4]
+
+        Pixel values are averaged over each month in a quarter and for every channel. Nans are ignored.
+        """
         metadata = self._get_chip_metadata(chip_id)
         imgs_in_chip = []
         for Q in range(1,5):

@@ -68,7 +68,6 @@ class Pix2PixBioModel(BaseModel):
             # define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)
             self.criterionL1 = torch.nn.L1Loss()
-            self.criterionMSE = torch.nn.MSELoss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -140,6 +139,7 @@ class Pix2PixBioModel(BaseModel):
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)
             if name in ['real_B', 'fake_B']:
+                visual_ret[name+'_clip'] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1], clip_input=True)
                 visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
             elif name == 'real_A':
                 visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
@@ -147,16 +147,19 @@ class Pix2PixBioModel(BaseModel):
     
     def calculate_RMSE(self):
         """Calculate RMSE of generated image against ground truth"""
-        fake_B = self.rescale_image(self.fake_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
-        real_B = self.rescale_image(self.real_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        # fake_B = self.rescale_image(self.fake_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        # real_B = self.rescale_image(self.real_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        fake_B = self.fake_B * self.Y_SCALE
+        real_B = self.real_B * self.Y_SCALE
 
         # DEBUG
         util.summarize_data(fake_B, 'RMSE fake image')
         util.summarize_data(real_B, 'RMSE real image')
 
-        self.loss_RMSE = torch.sqrt(self.criterionMSE(fake_B, real_B)).detach().numpy()
+        criterionMSE = torch.nn.MSELoss()
+        self.loss_RMSE = torch.sqrt(criterionMSE(fake_B, real_B)).detach().numpy()
 
-    def rescale_image(self, input_image, input_domain=[0, 1], output_domain=[0, 255]):
+    def rescale_image(self, input_image, input_domain=[0, 1], output_domain=[0, 255], clip_input=False):
         """Rescales images
 
         Parameters:
@@ -171,18 +174,23 @@ class Pix2PixBioModel(BaseModel):
         """
         out_min, out_max = output_domain
         assert out_max > out_min
+        if clip_input:
+            upper = torch.quantile(input_image, q=.99) #.detach().numpy()
+            output_image = torch.clamp(input_image, max=upper)
+        else:
+            output_image = input_image
+
         if input_domain:
             in_min, in_max = input_domain
             assert in_max > in_min
-            output_image = (input_image - in_min) / (in_max - in_min)
-            output_image = torch.clip(output_image, max=in_max)
+            output_image = (output_image - in_min) / (in_max - in_min)
         else:
-            output_image = (input_image - input_image.min()) / (input_image.max() - input_image.min())
+            output_image = (output_image - output_image.min()) / (output_image.max() - output_image.min())
         output_image = output_image * (out_max - out_min) + out_min
 
         # DEBUG
-        # util.summarize_data(input_image, 'visualizer input image')
-        # util.summarize_data(output_image, 'visualizer output image')
+        # util.summarize_data(input_image, 'rescale input image')
+        # util.summarize_data(output_image, 'rescale output image')
 
         return output_image
 

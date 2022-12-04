@@ -157,7 +157,7 @@ class Pix2PixBioModel(BaseModel):
         util.summarize_data(real_B, 'RMSE real image')
 
         criterionMSE = torch.nn.MSELoss()
-        self.loss_RMSE = torch.sqrt(criterionMSE(fake_B, real_B)).detach().numpy()
+        self.loss_RMSE = torch.sqrt(criterionMSE(fake_B, real_B)).cpu().detach().numpy()
 
     def rescale_image(self, input_image, input_domain=[0, 1], output_domain=[0, 255], clip_input=False):
         """Rescales images

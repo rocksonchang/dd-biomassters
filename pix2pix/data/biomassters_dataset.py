@@ -1,7 +1,10 @@
+import copy
 import numpy as np
 import pandas as pd
 import tifffile as tif
+import torch
 from torchvision import transforms
+import warnings
 
 from data.base_dataset import BaseDataset, get_params, get_transform
 from util import util
@@ -14,14 +17,18 @@ class BioMasstersDataset(BaseDataset):
     During test time, you need to prepare a directory '/path/to/data/test'.
     """
     RANDOM_STATE = 42
+    METADATA_FILE = "./data/metadata/features_metadata_split_42.csv"
+
     # Y_SCALE = 63.41566
     # Y_SCALE = 1e4
     Y_SCALE = 385 # 99th percentile
+
     SATELLITE = 'S1' # S1, S2, None
     CHIP_IS_COMPLETE = False
-    CHIP_S1_IS_IMPUTABLE = True
+    CHIP_S1_IS_IMPUTABLE = False
+
     X_AGGREGATION = 'quarterly'
-    METADATA_FILE = "./data/metadata/features_metadata_split_42.csv"
+    NAN_MEAN_VALUE = -50
 
     def __init__(self, opt):
         BaseDataset.__init__(self, opt)
@@ -68,13 +75,27 @@ class BioMasstersDataset(BaseDataset):
         """
         chip_id = self.data['chip_id'].iloc[index]
         if self.X_AGGREGATION == 'quarterly':
-            X_raw = self._load_chip_feature_data_by_quarter(chip_id)  # quarterly aggregation
+            X_raw = self.__load_chip_feature_data_by_quarter(chip_id)  # quarterly aggregation
         else:
-            X_raw = self._load_chip_feature_data(chip_id)             # no aggregation        
-        y_raw = self._load_chip_target_data(chip_id)
+            X_raw = self.__load_chip_feature_data(chip_id)             # no aggregation
+        
+        # # impute chip values
+        # if np.isnan(X_raw).any():
+        #     print('chip_id', chip_id, 'imputation: mean_annual_value_per_channel')
+        #     X_raw = self.impute_chip_values(X_raw, strategy='mean_annual_value_per_channel')
+        # if np.isnan(X_raw).any():
+        #     print('chip_id', chip_id, 'imputation: mean_chip_value_per_channel')
+        #     X_raw = self.impute_chip_values(X_raw, strategy='mean_chip_value_per_channel')
+        # if np.isnan(X_raw).any():
+        #     print('chip_id', chip_id, 'imputation: mean_chip_value')
+        #     X_raw = self.impute_chip_values(X_raw, strategy='mean_chip_value')
+
+        X_raw = np.concatenate(X_raw, axis=2)
+        y_raw = self.__load_chip_target_data(chip_id)
 
         # apply transforms
         X = self.transform_X(X_raw).float()
+        X = torch.nan_to_num(X)
         y = self.transform_y(y_raw).float()
         
         # DEBUG
@@ -89,7 +110,7 @@ class BioMasstersDataset(BaseDataset):
         """Return the total number of images in the dataset."""
         return len(self.data)
     
-    def _get_chip_metadata(self, chip_id):
+    def __get_chip_metadata(self, chip_id):
         """ Get chip metadata
 
         Parameters:
@@ -103,9 +124,15 @@ class BioMasstersDataset(BaseDataset):
             condition &= self.metadata.satellite==self.SATELLITE
         return self.metadata[condition]
     
-    def _load_chip_feature_data(self, chip_id):
+    def __load_chip_feature_data(self, chip_id):
+        """ Load chip feature data
+        Params:
+            chip_id (string) - id of chip to retrieve
+        Returns:
+            image data (List[np.Array()]) - list length 12, np array shape (256,256,4) for S1 and (256,256,11) for s2
+        """
         img_channels = []
-        for _, row in self._get_chip_metadata(chip_id).iterrows():
+        for _, row in self.__get_chip_metadata(chip_id).iterrows():
             if type(row.filename) != str:
                 if row.satellite=='S1':
                     img = self.dummy_s1_missing_img
@@ -115,23 +142,22 @@ class BioMasstersDataset(BaseDataset):
                     raise ValueError("Unknown satellite value")
             else:
                 s3_key = f"{'test' if self.opt.phase=='test' else 'train'}_features/{row.filename}"
-                img = self.load_tif(out_path=f'{self.opt.dataroot}/{s3_key}')
-                
+                img = self.load_tif(out_path=f'{self.opt.dataroot}/{s3_key}')    
             img_channels.append(img)
-        return np.concatenate(img_channels, axis=2)
+        return img_channels
     
-    def _load_chip_feature_data_by_quarter(self, chip_id):
+    def __load_chip_feature_data_by_quarter(self, chip_id):
         """Load chip data by quarter
 
         Parameters:
             chip_id (string) - chip id
 
         Returns:
-            A tensor of dimension [H, V, num_channels, 4]
+            List[np.Array()] -- list length 4, np array shape (256,256,4) for S1 and (256,256,11) for s2
 
         Pixel values are averaged over each month in a quarter and for every channel. Nans are ignored.
         """
-        metadata = self._get_chip_metadata(chip_id)
+        metadata = self.__get_chip_metadata(chip_id)
         imgs_in_chip = []
         for Q in range(1,5):
             # get images in quarter
@@ -145,14 +171,50 @@ class BioMasstersDataset(BaseDataset):
             # take pixel value mean over months in quarter, for each channel
             imgs_in_quarter_by_channel = []
             for ch in range(_img.shape[2]):
-                _img = np.nanmean([x[:,:,ch] for x in imgs_in_quarter], axis=0)
+                _img = self.nanmean([x[:,:,ch] for x in imgs_in_quarter], axis=0, catch_warning=True)
                 imgs_in_quarter_by_channel.append(_img)
             _img = np.stack(imgs_in_quarter_by_channel, axis=2)
             imgs_in_chip.append(_img)
-        return np.concatenate(imgs_in_chip, axis=2)
-    
-    def _load_chip_target_data(self, chip_id):
-        filename = self._get_chip_metadata(chip_id).corresponding_agbm.iloc[0]
+        return imgs_in_chip
+
+    def impute_chip_values(self, input, strategy):
+        """ Impute chip values
+        Parameters:
+            imgs (List[np.Array()]) - list length 4 (quarterly agg) or 12 (monthly), np array shape (256,256,4) for S1 and (256,256,11) for s2
+            strategy (str) - imputation strategy {fixed_value, mean_annual_value_per_channel, mean_chip_value_per_channel, mean_chip_value}
+        
+        Returns:
+            imputed images (List[np.Array()])
+        """
+        imgs = copy.deepcopy(input)
+        num_channels = 4
+        if strategy == 'fixed_value':
+            for idx in range(len(imgs)):
+                imgs[idx] = np.nan_to_num(imgs[idx], nan=self.NAN_MEAN_VALUE)
+        elif strategy == 'mean_annual_value_per_channel':
+            for ch in range(num_channels):
+                img_channel = [x[:,:,ch] for x in imgs]
+                mean = self.nanmean(img_channel, axis=0, catch_warning=True)
+                for idx in range(len(imgs)):
+                    isnan_idx = np.isnan(imgs[idx][:,:,ch])
+                    imgs[idx][:,:,ch][isnan_idx] = mean[isnan_idx]
+        elif strategy == 'mean_chip_value_per_channel':
+            for ch in range(num_channels):
+                img_channel = [x[:,:,ch] for x in imgs]
+                mean = self.nanmean(img_channel, axis=None, catch_warning=True)
+                for idx in range(len(imgs)):
+                    isnan_idx = np.isnan(imgs[idx][:,:,ch])
+                    imgs[idx][:,:,ch][isnan_idx] = mean
+        elif strategy == 'mean_chip_value':
+            mean = self.nanmean(imgs, axis=None, catch_warning=False)
+            for idx in range(len(imgs)):
+                imgs[idx] = np.nan_to_num(imgs[idx], nan=mean)
+        else:
+            raise Warning(f'Imputation strategy {strategy} not recognized')
+        return imgs
+
+    def __load_chip_target_data(self, chip_id):
+        filename = self.__get_chip_metadata(chip_id).corresponding_agbm.iloc[0]
         s3_key = f'train_agbm/{filename}'
         img = self.load_tif(out_path=f'{self.opt.dataroot}/{s3_key}')
         return img
@@ -171,3 +233,17 @@ class BioMasstersDataset(BaseDataset):
             return img
         else:
             raise ValueError(f"Unknown image shape {np.shape(img)}")
+
+    def nanmean(self, input, axis, catch_warning=False):
+        """ Numpy nanmean, wrapped by catch warning
+        Parameters:
+            input (np.array) - input array (or list of array)
+            axis (int) - axis for aggregaion
+            catch_warning (bool) - if true, catch and suppress warning
+        Returns:
+        """
+        with warnings.catch_warnings():
+            # nanmean across images in quarter may produce RuntimeWarning
+            if catch_warning:
+                warnings.simplefilter("ignore")
+            return np.nanmean(input, axis=axis)

@@ -153,8 +153,8 @@ class Pix2PixBioModel(BaseModel):
         real_B = self.real_B * self.Y_SCALE
 
         # DEBUG
-        util.summarize_data(fake_B, 'RMSE fake image')
-        util.summarize_data(real_B, 'RMSE real image')
+        # util.summarize_data(fake_B, 'RMSE fake image')
+        # util.summarize_data(real_B, 'RMSE real image')
 
         criterionMSE = torch.nn.MSELoss()
         self.loss_RMSE = torch.sqrt(criterionMSE(fake_B, real_B)).cpu().detach().numpy()

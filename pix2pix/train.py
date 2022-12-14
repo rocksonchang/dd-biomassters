@@ -18,6 +18,7 @@ See options/base_options.py and options/train_options.py for more training optio
 See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/tips.md
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
+from copy import deepcopy
 import time
 from options.train_options import TrainOptions
 from data import create_dataset
@@ -52,13 +53,36 @@ if __name__ == '__main__':
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
-                save_result = total_iters % opt.update_html_freq == 0
-                model.compute_visuals()
-                visualizer.display_current_results(model.get_current_visuals(), epoch, save_result)
+            # if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
 
-            if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
+                save_result = total_iters % opt.update_html_freq == 0
+
+                # training results
+                model.compute_visuals()
+                visuals = model.get_current_visuals()
                 model.calculate_RMSE()
                 losses = model.get_current_losses()
+
+                # validation results
+                validation_opt = deepcopy(opt)
+                validation_opt.phase = 'validation'
+                validation_opt.max_dataset_size = 16
+                validation_opt.batch_size = validation_opt.max_dataset_size
+                validation_opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+                validation_opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+                validation_dataset = create_dataset(validation_opt)  # create a dataset given opt.dataset_mode and other options
+                for i, data in enumerate(validation_dataset):
+                    model.set_input(data)  # unpack data from data loader
+                    model.test()           # run inference
+                    model.compute_visuals()
+                    validation_visuals = model.get_current_visuals()
+                    for k,v in validation_visuals.items():
+                        visuals[f'{k}_validation'] = v
+                    model.calculate_RMSE()
+                    losses['RMSE_validation'] = model.get_current_losses()['RMSE']
+
+                # display and print results
+                visualizer.display_current_results(visuals, epoch, save_result)
                 t_comp = (time.time() - iter_start_time) / opt.batch_size
                 visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
                 if opt.display_id > 0:

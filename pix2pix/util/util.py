@@ -23,6 +23,7 @@ def tensor2im(input_image, imtype=np.uint8):
             image_numpy = np.tile(image_numpy, (3, 1, 1))
         elif image_numpy.shape[0] > 3:  # multi-channel image, # take 1st channel only
             image_numpy = np.tile(image_numpy[0,:,:], (3, 1, 1))
+        image_numpy[(0,2),:,:] = 0 # make images green
         image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
         # DEBUG 
         # util.summarize_data(image_tensor[0].cpu().float().numpy(), 'tensor2im input')

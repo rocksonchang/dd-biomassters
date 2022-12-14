@@ -62,6 +62,7 @@ if __name__ == '__main__':
                 visuals = model.get_current_visuals()
                 model.calculate_RMSE()
                 losses = model.get_current_losses()
+                real_B_hist, fake_B_hist = model.return_distributions()
 
                 # validation results
                 validation_opt = deepcopy(opt)
@@ -80,6 +81,7 @@ if __name__ == '__main__':
                         visuals[f'{k}_validation'] = v
                     model.calculate_RMSE()
                     losses['RMSE_validation'] = model.get_current_losses()['RMSE']
+                validation_real_B_hist, validation_fake_B_hist = model.return_distributions()
 
                 # display and print results
                 visualizer.display_current_results(visuals, epoch, save_result)
@@ -87,6 +89,8 @@ if __name__ == '__main__':
                 visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
                 if opt.display_id > 0:
                     visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
+                    visualizer.plot_distribution(real_B_hist, fake_B_hist, 'train')
+                    visualizer.plot_distribution(validation_real_B_hist, validation_fake_B_hist, 'validation')
 
             if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
                 print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))

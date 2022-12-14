@@ -84,5 +84,5 @@ if __name__ == '__main__':
         rmse_list.append(model.loss_RMSE)
         print(i, img_path, 'RMSE:', model.loss_RMSE)
     webpage.save()  # save the HTML
-    rmse = np.sqrt(sum([x**2 for x in rmse_list])/len(rmse_list))
+    rmse = np.mean(rmse_list)
     print(f'Overall RMSE {rmse:.2f}')

@@ -255,3 +255,30 @@ class Visualizer():
         print(message)  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message
+    
+    def plot_distribution(self, real_B_hist, fake_B_hist, label):
+        """display the pixel value distributions
+
+        Parameters:
+            real_B_hist (tuple(np.ndarray))           -- real image pixel distribution 
+            fake_B_hist (tuple(np.ndarray))           -- fake image pixel distribution
+            label (str)                               -- label for displays
+        """
+        if not hasattr(self, f'dist_data'):
+            self.dist_data = {'X': [], 'Y': [], 'legend': ['real', 'fake']}
+
+        
+        self.dist_data['X'] = real_B_hist[1][:-1]
+        self.dist_data['Y'] = [real_B_hist[0], fake_B_hist[0]]
+        try:
+            self.vis.line(
+                X=np.transpose(np.stack([np.array(self.dist_data['X'])] * len(self.dist_data['legend']), 0)),
+                Y=np.transpose(np.array(self.dist_data['Y'])),
+                opts={
+                    'title': f'{self.name} {label} distribution',
+                    'legend': self.dist_data['legend'],
+                    'xlabel': 'bins',
+                    'ylabel': 'count'},
+                win=self.display_id + 2 + (1 if label=='train' else 2))
+        except VisdomExceptionBase:
+            self.create_visdom_connections()

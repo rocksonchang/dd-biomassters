@@ -33,6 +33,7 @@ if __name__ == '__main__':
 
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
+    # model.netG.train()
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
 
@@ -72,6 +73,7 @@ if __name__ == '__main__':
                 validation_opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
                 validation_opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
                 validation_dataset = create_dataset(validation_opt)  # create a dataset given opt.dataset_mode and other options
+                # model.eval()
                 for i, data in enumerate(validation_dataset):
                     model.set_input(data)  # unpack data from data loader
                     model.test()           # run inference
@@ -82,6 +84,7 @@ if __name__ == '__main__':
                     model.calculate_RMSE()
                     losses['RMSE_validation'] = model.get_current_losses()['RMSE']
                 validation_real_B_hist, validation_fake_B_hist = model.return_distributions()
+                # model.netG.train()
 
                 # display and print results
                 visualizer.display_current_results(visuals, epoch, save_result)

@@ -1,3 +1,4 @@
+import numpy as np
 import os
 import torch
 from collections import OrderedDict
@@ -229,3 +230,26 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
+
+    def return_distributions(self, log_transform=False):
+        """
+        Return generated image pixel distributions
+
+        Parameters:
+            log_transform (boolean): apply log transform
+
+        Returns:
+            tuple of histograms (tuple of np.ndarray)
+        """
+        if log_transform:
+            fake_B = np.log(1+self.fake_B.detach().numpy() * self.Y_SCALE)
+            real_B = np.log(1+self.real_B.detach().numpy() * self.Y_SCALE)
+            hist_scale = np.log(1+self.Y_SCALE*2)
+        else:
+            fake_B = self.fake_B.detach().numpy() * self.Y_SCALE
+            real_B = self.real_B.detach().numpy() * self.Y_SCALE
+            hist_scale = self.Y_SCALE
+        fake_B_hist = np.histogram(fake_B, bins=np.arange(0, hist_scale, hist_scale/100))
+        real_B_hist = np.histogram(real_B, bins=np.arange(0, hist_scale, hist_scale/100))
+        
+        return real_B_hist, fake_B_hist

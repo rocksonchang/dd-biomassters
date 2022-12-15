@@ -196,26 +196,3 @@ class Pix2PixBioModel(BaseModel):
         # util.summarize_data(output_image, 'rescale output image')
 
         return output_image
-    
-    def return_distributions(self, log=False):
-        """
-        Return generated image pixel distributions
-
-        Parameters:
-            log (boolean): apply log transform
-
-        Returns:
-            tuple of histograms (tuple of np.ndarray)
-        """
-        if log:
-            fake_B = np.log(1+self.fake_B.detach().numpy() * self.Y_SCALE)
-            real_B = np.log(1+self.real_B.detach().numpy() * self.Y_SCALE)
-            hist_scale = np.log(1+self.Y_SCALE*2)
-        else:
-            fake_B = self.fake_B.detach().numpy() * self.Y_SCALE
-            real_B = self.real_B.detach().numpy() * self.Y_SCALE
-            hist_scale = self.Y_SCALE
-        fake_B_hist = np.histogram(fake_B, bins=np.arange(0, hist_scale, hist_scale/100))
-        real_B_hist = np.histogram(real_B, bins=np.arange(0, hist_scale, hist_scale/100))
-        
-        return real_B_hist, fake_B_hist

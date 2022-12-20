@@ -108,6 +108,9 @@ class EncodeDecodeBioModel(BaseModel):
                 visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
             elif name == 'real_A':
                 visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
+        visual_ret['fake_B_L1_err'] = self.rescale_image(
+            abs(getattr(self, 'fake_B') - getattr(self, 'real_B')) * self.Y_SCALE,
+            input_domain=None, output_domain=[-1, 1], clip_input=True)
         return visual_ret
     
     def calculate_RMSE(self):

@@ -251,5 +251,6 @@ class BaseModel(ABC):
             hist_scale = self.Y_SCALE
         fake_B_hist = np.histogram(fake_B, bins=np.arange(0, hist_scale, hist_scale/100))
         real_B_hist = np.histogram(real_B, bins=np.arange(0, hist_scale, hist_scale/100))
+        err_B_hist = np.histogram(abs(fake_B-real_B), bins=np.arange(0, hist_scale, hist_scale/100))
         
-        return real_B_hist, fake_B_hist
+        return real_B_hist, fake_B_hist, err_B_hist

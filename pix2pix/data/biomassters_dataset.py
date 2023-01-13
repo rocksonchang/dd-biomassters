@@ -13,17 +13,33 @@ class BioMasstersDataset(BaseDataset):
     During test time, you need to prepare a directory '/path/to/data/test'.
     """
     RANDOM_STATE = 42
+    # X_AGGREGATION = 'quarterly'
 
-    # Y_SCALE = 63.41566  # mean
-    # Y_SCALE = 1e4       # upper bound
-    Y_SCALE = 385         # 99th percentile
+    Y_SCALE  = 385 # 99th percentile | 1e4 # upper bound | 63.41566 # mean
+    S1_MEAN  = (-11.298, -17.923, -11.361, -18.081)
+    S1_STD   = (2.908, 4.087, 3.168, 4.505)
+    # S2_MEAN = (1351.63, 1340.69, 1336.12, 1595.07, 2045.05, 2129.55, 2251.64, 2205.2, 849.48, 578.22, 33.53)
+    # S2_STD = (2372.98, 2212.68, 2271.43, 2297.93, 2224.87, 2149.12, 2249.42, 2100.52, 941.88, 745.59, 42.59)
+    S2_SCALE = (9433, 9215, 9346, 9530, 9244, 8849, 9256, 8601, 4136, 3612, 100) # 99th percentile
 
-    # SATELLITE = 'S1' # S1, S2, None
-    CHIP_IS_COMPLETE = False
-    CHIP_S1_IS_IMPUTABLE = False
+    @staticmethod
+    def modify_commandline_options(parser, is_train):
+        """Add new dataset-specific options, and rewrite default values for existing options.
 
-    X_AGGREGATION = 'quarterly'
-    # NAN_MEAN_VALUE = -50
+        Parameters:
+            parser          -- original option parser
+            is_train (bool) -- whether training phase or test phase. You can use this flag to add training-specific or test-specific options.
+
+        Returns:
+            the modified parser.
+
+        By default, the number of channels for input image  is 1 (L) and
+        the number of channels for output image is 2 (ab). The direction is from A to B
+        """
+        parser.add_argument('--metadata_file', type=str, help='metadatafile for BioMassters dataset')
+        parser.add_argument('--satellite', type=str, default=None, help='satellite for BioMassters dataset')
+        parser.add_argument('--random_state', type=int, default=None, help='random state for BioMassters dataset')
+        return parser
 
     def __init__(self, opt):
         BaseDataset.__init__(self, opt)
@@ -31,11 +47,9 @@ class BioMasstersDataset(BaseDataset):
         # prepare metadata
         self.metadata = pd.read_csv(opt.metadata_file ,index_col=0)
         condition = self.metadata.split == opt.phase
-        if self.CHIP_IS_COMPLETE:
-            condition &= self.metadata.is_complete
-        if self.CHIP_S1_IS_IMPUTABLE:
-            condition &= self.metadata.is_imputable_s1
         self.chips = self.metadata[condition].chip_id.drop_duplicates().reset_index(drop=True).to_frame()
+        if len(self.chips) == 0:
+            raise ValueError('No chips to process')
 
         # sample chips
         self.chips = self.chips.sample(
@@ -45,26 +59,29 @@ class BioMasstersDataset(BaseDataset):
 
         # prepare dummy values
         self.s1_missing_value = -9999
-        self.s2_missing_value = 255
         self.dummy_s1_missing_value = np.nan
-        self.dummy_s2_missing_value = 255
-        self.dummy_s1_missing_img = np.ones([256,256,4])*self.dummy_s1_missing_value
-        self.dummy_s2_missing_img = np.concatenate([np.zeros([256,256,10]), np.ones([256,256,1])*100], axis=2) # treat as fully obscured
+        self.dummy_s1_missing_img = np.ones([256,256,4]) * self.dummy_s1_missing_value
+        self.s2_missing_value = 255
+        self.dummy_s2_missing_value = 100
+        self.dummy_s2_missing_img = np.concatenate(
+            [np.zeros([256,256,10]), np.ones([256,256,1]) * self.dummy_s2_missing_value], # treat as fully obscured
+            axis=2
+        )
 
         # prepare transforms
         self.transform_X = transforms.Compose(
             [
                 transforms.ToTensor(), 
                 transforms.Normalize(
-                    (-12.47562, -19.737421, -12.25755, -19.234262) * int(opt.input_nc/4), # S1, month 4 mean
-                    (3.3957279, 4.483836, 4.1778703, 5.884509) * int(opt.input_nc/4)      # S1, month 4 std
+                    self.S1_MEAN * 12 + (0,) * 11 * 12,
+                    self.S1_STD * 12 + self.S2_SCALE * 12
                 )
             ]
         )
         self.transform_y = transforms.Compose(
             [
                 transforms.ToTensor(), 
-                transforms.Normalize((0,), (self.Y_SCALE,))         # offset and scale
+                transforms.Normalize((0,), (self.Y_SCALE,))
             ]
         )
     
@@ -88,12 +105,11 @@ class BioMasstersDataset(BaseDataset):
         # else:
         #     X_raw = self.__load_chip_feature_data(chip_id)             # no aggregation
         X_raw = self.__load_chip_feature_data(chip_id)             # no aggregation
-
         y_raw = self.__load_chip_target_data(chip_id)
 
         # apply transforms
         X = self.transform_X(X_raw).float()
-        X = torch.nan_to_num(X)
+        X = torch.nan_to_num(X) # zero impute
         y = self.transform_y(y_raw).float()
         
         # DEBUG
@@ -131,7 +147,6 @@ class BioMasstersDataset(BaseDataset):
         """
         imgs = []
         for _, row in self.__get_chip_metadata(chip_id).iterrows():
-            # self.__download_chip_feature_data(row.filename)
             if row.satellite == 'S1':
                 img = self.__load_chip_s1_data(row.filename)
             elif row.satellite == 'S2':
@@ -156,7 +171,7 @@ class BioMasstersDataset(BaseDataset):
         else:
             s3_key = f"{'test' if self.opt.phase=='test' else 'train'}_features/{filename}"
             img = butils.load_tif(out_path=f'{self.opt.dataroot}/{s3_key}')
-            img[:,:,10] = np.clip(img[:,:,10], a_min=0, a_max=100)
+            img[:,:,10] = np.clip(img[:,:,10], a_min=0, a_max=self.dummy_s2_missing_value)
         return img
 
     # def __load_chip_feature_data_by_quarter(self, chip_id):

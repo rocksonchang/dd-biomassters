@@ -1,10 +1,11 @@
 from collections import OrderedDict
+import numpy as np
 import torch
 from .base_model import BaseModel
 from . import networks
 from data.biomassters_dataset import BioMasstersDataset
 from util import util
-import numpy as np
+from util import biomassters_utils as butils
 
 
 class EncodeDecodeBioModel(BaseModel):
@@ -100,25 +101,31 @@ class EncodeDecodeBioModel(BaseModel):
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
         visual_ret = OrderedDict()
+        visual_ret['fake_B_L1_err'] = abs(getattr(self, 'fake_B') - getattr(self, 'real_B')) * self.Y_SCALE
         for name in self.visual_names:
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)
-            if name in ['real_B', 'fake_B']:
-                visual_ret[name+'_clip'] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1], clip_input=True)
-                visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
+                # DEBUG
+                # butils.summarize_data(visual_ret[name], f'Raw visuals: {name}')
+            if name == 'real_B':
+                visual_ret[name+'_clip'] = butils.rescale_image(visual_ret[name], input_domain=[0,1], output_domain=[-1, 1], clip_input=True)
+                visual_ret[name] = butils.rescale_image(visual_ret[name], input_domain=[0,1], output_domain=[-1, 1])
+            elif name == 'fake_B':
+                visual_ret[name] = torch.clamp(visual_ret[name], min=0, max=1)
+                visual_ret[name+'_clip'] = butils.rescale_image(visual_ret[name], input_domain=[0,1], output_domain=[-1, 1], clip_input=True)
+                visual_ret[name] = butils.rescale_image(visual_ret[name], input_domain=[0,1], output_domain=[-1, 1])
             elif name == 'real_A':
-                visual_ret[name] = self.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
-        visual_ret['fake_B_L1_err'] = self.rescale_image(
-            abs(getattr(self, 'fake_B') - getattr(self, 'real_B')) * self.Y_SCALE,
-            input_domain=None, output_domain=[-1, 1], clip_input=True)
+                visual_ret[name] = butils.rescale_image(visual_ret[name], input_domain=None, output_domain=[-1, 1])
+            # DEBUG
+            # butils.summarize_data(visual_ret[name], f'Inverse transformed visuals: {name}')
         return visual_ret
     
     def calculate_RMSE(self):
         """Calculate RMSE of generated image against ground truth"""
-        # fake_B = self.rescale_image(self.fake_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
-        # real_B = self.rescale_image(self.real_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
-        fake_B = self.fake_B * self.Y_SCALE
-        real_B = self.real_B * self.Y_SCALE
+        # fake_B = butils.rescale_image(self.fake_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
+        # real_B = butils.rescale_image(self.real_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
+        fake_B = butils.rescale_image(self.fake_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        real_B = butils.rescale_image(self.real_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
 
         # DEBUG
         # util.summarize_data(fake_B, 'RMSE fake image')
@@ -127,38 +134,32 @@ class EncodeDecodeBioModel(BaseModel):
         criterionMSE = torch.nn.MSELoss()
         self.loss_RMSE = torch.sqrt(criterionMSE(fake_B, real_B)).cpu().detach().numpy()
 
-    def rescale_image(self, input_image, input_domain=[0, 1], output_domain=[0, 255], clip_input=False):
-        """Rescales images
+    def return_distributions(self, log_transform=False):
+        """
+        Return generated image pixel distributions
 
         Parameters:
-            input_image (torch.Tensor)     -- input image
-            input_domain (List[Int, Int])  -- min and max values of input domain
-            output_domain (List[Int, Int]) -- min and max values of output domain
+            log_transform (boolean): apply log transform
 
         Returns:
-            the rescaled image.
-
-        If input domain is None, rescales using the image max and min
+            tuple of histograms (tuple of np.ndarray)
         """
-        out_min, out_max = output_domain
-        assert out_max > out_min
-        if clip_input:
-            upper = torch.quantile(input_image, q=.99) #.detach().numpy()
-            output_image = torch.clamp(input_image, max=upper)
-        else:
-            output_image = input_image
-
-        if input_domain:
-            in_min, in_max = input_domain
-            assert in_max > in_min
-            output_image = (output_image - in_min) / (in_max - in_min)
-        else:
-            output_image = (output_image - output_image.min()) / (output_image.max() - output_image.min())
-        output_image = output_image * (out_max - out_min) + out_min
-
         # DEBUG
-        # util.summarize_data(input_image, 'rescale input image')
-        # util.summarize_data(output_image, 'rescale output image')
+        # butils.summarize_data(self.fake_B, f'Dist raw: fake')
+        # butils.summarize_data(self.real_B, f'Dist raw: real')
+        fake_B = butils.rescale_image(torch.clamp(self.fake_B, min=0, max=1).detach().cpu().numpy(), input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        # fake_B = butils.rescale_image(self.fake_B.detach().cpu().numpy(), input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        real_B = butils.rescale_image(self.real_B.detach().cpu().numpy(), input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        # butils.summarize_data(self.fake_B, f'Dist inverted: fake')
+        # butils.summarize_data(self.real_B, f'Dist inverted: real')
 
-        return output_image
-
+        hist_scale = self.Y_SCALE
+        if log_transform:
+            fake_B = np.log(1 + fake_B)
+            real_B = np.log(1 + real_B)
+            hist_scale = np.log(1+self.Y_SCALE*2)    
+        fake_B_hist = np.histogram(fake_B, bins=np.arange(0, hist_scale, hist_scale/100))
+        real_B_hist = np.histogram(real_B, bins=np.arange(0, hist_scale, hist_scale/100))
+        err_B_hist = np.histogram(abs(fake_B-real_B), bins=np.arange(0, hist_scale, hist_scale/100))
+        
+        return real_B_hist, fake_B_hist, err_B_hist

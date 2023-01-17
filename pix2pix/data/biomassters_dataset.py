@@ -5,22 +5,33 @@ from torchvision import transforms
 
 from data.base_dataset import BaseDataset
 from util import biomassters_utils as butils
+from util import util
 
 class BioMasstersDataset(BaseDataset):
     """A dataset class for BioMassters
 
     It assumes that the directory '/path/to/data/train' contains image pairs in the form of {A,B}.
     During test time, you need to prepare a directory '/path/to/data/test'.
-    """
-    RANDOM_STATE = 42
-    # X_AGGREGATION = 'quarterly'
 
-    Y_SCALE  = 385 # 99th percentile | 1e4 # upper bound | 63.41566 # mean
     S1_MEAN  = (-11.298, -17.923, -11.361, -18.081)
     S1_STD   = (2.908, 4.087, 3.168, 4.505)
-    # S2_MEAN = (1351.63, 1340.69, 1336.12, 1595.07, 2045.05, 2129.55, 2251.64, 2205.2, 849.48, 578.22, 33.53)
-    # S2_STD = (2372.98, 2212.68, 2271.43, 2297.93, 2224.87, 2149.12, 2249.42, 2100.52, 941.88, 745.59, 42.59)
+    S2_MEAN = (1351.63, 1340.69, 1336.12, 1595.07, 2045.05, 2129.55, 2251.64, 2205.2, 849.48, 578.22, 33.53)
+    S2_STD = (2372.98, 2212.68, 2271.43, 2297.93, 2224.87, 2149.12, 2249.42, 2100.52, 941.88, 745.59, 42.59)
     S2_SCALE = (9433, 9215, 9346, 9530, 9244, 8849, 9256, 8601, 4136, 3612, 100) # 99th percentile
+    Y_SCALE  = 385 # 99th percentile | 1e4 # upper bound | 63.41566 # mean
+    """
+    RANDOM_STATE = 42
+
+    # input disributions
+    Y_SCALE  = 385.0
+    S1_MEAN  = (-11.298, -17.923, -11.361, -18.081)
+    S1_STD   = (2.908, 4.087, 3.168, 4.505)
+    S2_SCALE = (9433, 9215, 9346, 9530, 9244, 8849, 9256, 8601, 4136, 3612, 100)
+
+    # rescale input distribution factors
+    EPSILON = 0.0
+    Y_SCALE *= 1.0
+    S2_SCALE = tuple([x * 1.0 for x in S2_SCALE])
 
     @staticmethod
     def modify_commandline_options(parser, is_train):
@@ -80,10 +91,22 @@ class BioMasstersDataset(BaseDataset):
         )
         self.transform_y = transforms.Compose(
             [
-                transforms.ToTensor(), 
-                transforms.Normalize((0,), (self.Y_SCALE,))
+                transforms.ToTensor(),
+                transforms.Lambda(self.rescale_with_offset)
             ]
         )
+
+    def rescale_with_offset(self, y):
+        img = y / self.Y_SCALE
+        img = torch.clamp(img, min=0, max=1)
+        delta = self.EPSILON / (1. - self.EPSILON)
+        img = (img + delta) / (1 + delta)
+        return img
+    
+    def inv_rescale_with_offset(self, y):
+        delta = self.EPSILON / (1. - self.EPSILON)
+        img = (y * (1 + delta) - delta) * self.Y_SCALE
+        return img
     
     def load(self):
         self.images = []
@@ -100,10 +123,6 @@ class BioMasstersDataset(BaseDataset):
         """Return a data point and its metadata information.
         """
         chip_id = self.chips['chip_id'].iloc[index]
-        # if self.X_AGGREGATION == 'quarterly':
-        #     X_raw = self.__load_chip_feature_data_by_quarter(chip_id)  # quarterly aggregation
-        # else:
-        #     X_raw = self.__load_chip_feature_data(chip_id)             # no aggregation
         X_raw = self.__load_chip_feature_data(chip_id)             # no aggregation
         y_raw = self.__load_chip_target_data(chip_id)
 
@@ -173,37 +192,6 @@ class BioMasstersDataset(BaseDataset):
             img = butils.load_tif(out_path=f'{self.opt.dataroot}/{s3_key}')
             img[:,:,10] = np.clip(img[:,:,10], a_min=0, a_max=self.dummy_s2_missing_value)
         return img
-
-    # def __load_chip_feature_data_by_quarter(self, chip_id):
-    #     """Load chip data by quarter
-
-    #     Parameters:
-    #         chip_id (string) - chip id
-
-    #     Returns:
-    #         List[np.Array()] -- list length 4, np array shape (256,256,4) for S1 and (256,256,11) for s2
-
-    #     Pixel values are averaged over each month in a quarter and for every channel. Nans are ignored.
-    #     """
-    #     metadata = self.__get_chip_metadata(chip_id)
-    #     imgs_in_chip = []
-    #     for Q in range(1,5):
-    #         # get images in quarter
-    #         imgs_in_quarter = []
-    #         for _, row in metadata[metadata.Q==Q].iterrows():
-    #             s3_key = f"train_features/{row.filename}"
-    #             _img = butils.load_tif(out_path=f'data/{s3_key}')
-    #             # replace encoded missing values with np.nan
-    #             _img[_img==self.s1_missing_value] = np.nan
-    #             imgs_in_quarter.append(_img)
-    #         # take pixel value mean over months in quarter, for each channel
-    #         imgs_in_quarter_by_channel = []
-    #         for ch in range(_img.shape[2]):
-    #             _img = butils.nanmean([x[:,:,ch] for x in imgs_in_quarter], axis=0, catch_warning=True)
-    #             imgs_in_quarter_by_channel.append(_img)
-    #         _img = np.stack(imgs_in_quarter_by_channel, axis=2)
-    #         imgs_in_chip.append(_img)
-    #     return imgs_in_chip
 
     def __load_chip_target_data(self, chip_id):
         filename = self.__get_chip_metadata(chip_id).corresponding_agbm.iloc[0]

@@ -106,7 +106,3 @@ def mkdir(path):
     """
     if not os.path.exists(path):
         os.makedirs(path)
-
-
-def summarize_data(x, label=None):
-    print(f'{label}; type: {type(x)}, shape: {x.shape}, max: {x.max():.2f}, min: {x.min():.2f}, mean: {x.mean():.2f}, std: {x.std():.2f}')

@@ -96,6 +96,13 @@ class BaseModel(ABC):
             if isinstance(name, str):
                 net = getattr(self, 'net' + name)
                 net.eval()
+    
+    def set_train_mode(self):
+        """Make models train mode during train time"""
+        for name in self.model_names:
+            if isinstance(name, str):
+                net = getattr(self, 'net' + name)
+                net.train()
 
     def test(self):
         """Forward function used in test time.
@@ -230,27 +237,3 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
-
-    def return_distributions(self, log_transform=False):
-        """
-        Return generated image pixel distributions
-
-        Parameters:
-            log_transform (boolean): apply log transform
-
-        Returns:
-            tuple of histograms (tuple of np.ndarray)
-        """
-        if log_transform:
-            fake_B = np.log(1+self.fake_B.detach().cpu().numpy() * self.Y_SCALE)
-            real_B = np.log(1+self.real_B.detach().cpu().numpy() * self.Y_SCALE)
-            hist_scale = np.log(1+self.Y_SCALE*2)
-        else:
-            fake_B = self.fake_B.detach().cpu().numpy() * self.Y_SCALE
-            real_B = self.real_B.detach().cpu().numpy() * self.Y_SCALE
-            hist_scale = self.Y_SCALE
-        fake_B_hist = np.histogram(fake_B, bins=np.arange(0, hist_scale, hist_scale/100))
-        real_B_hist = np.histogram(real_B, bins=np.arange(0, hist_scale, hist_scale/100))
-        err_B_hist = np.histogram(abs(fake_B-real_B), bins=np.arange(0, hist_scale, hist_scale/100))
-        
-        return real_B_hist, fake_B_hist, err_B_hist

@@ -37,6 +37,15 @@ if __name__ == '__main__':
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
 
+    # load validation dataset
+    validation_opt = deepcopy(opt)
+    validation_opt.phase = 'validation'
+    validation_opt.max_dataset_size = 16
+    validation_opt.batch_size = validation_opt.max_dataset_size
+    validation_opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    validation_opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    validation_dataset = create_dataset(validation_opt)  # create a dataset given opt.dataset_mode and other options
+
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):    # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
         epoch_start_time = time.time()  # timer for entire epoch
         iter_data_time = time.time()    # timer for data loading per iteration
@@ -50,6 +59,7 @@ if __name__ == '__main__':
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
+            model.set_train_mode()        # set train mode
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
@@ -62,29 +72,28 @@ if __name__ == '__main__':
                 model.compute_visuals()
                 visuals = model.get_current_visuals()
                 model.calculate_RMSE()
+                if 'acc_D_fake' in model.loss_names and 'acc_D_real' in model.loss_names:
+                    model.calculate_accuracy()
                 losses = model.get_current_losses()
                 real_B_hist, fake_B_hist, err_B_hist = model.return_distributions()
 
                 # validation results
-                validation_opt = deepcopy(opt)
-                validation_opt.phase = 'validation'
-                validation_opt.max_dataset_size = 16
-                validation_opt.batch_size = validation_opt.max_dataset_size
-                validation_opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-                validation_opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-                validation_dataset = create_dataset(validation_opt)  # create a dataset given opt.dataset_mode and other options
-                # model.eval()
+                model.eval() # set eval mode
                 for i, data in enumerate(validation_dataset):
                     model.set_input(data)  # unpack data from data loader
-                    model.test()           # run inference
+                    model.test()
                     model.compute_visuals()
                     validation_visuals = model.get_current_visuals()
                     for k,v in validation_visuals.items():
                         visuals[f'{k}_validation'] = v
                     model.calculate_RMSE()
+                    if 'acc_D_fake' in model.loss_names and 'acc_D_real' in model.loss_names:
+                        model.calculate_accuracy()
+                        losses['acc_D_fake_validation'] = model.get_current_losses()['acc_D_fake']
+                        losses['acc_D_real_validation'] = model.get_current_losses()['acc_D_real']
                     losses['RMSE_validation'] = model.get_current_losses()['RMSE']
+
                 validation_real_B_hist, validation_fake_B_hist, validation_err_B_hist = model.return_distributions()
-                # model.netG.train()
 
                 # display and print results
                 visualizer.display_current_results(visuals, epoch, save_result)

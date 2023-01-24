@@ -139,7 +139,10 @@ class Pix2PixBioModel(BaseModel):
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
         visual_ret = OrderedDict()
-        visual_ret['fake_B_L1_err'] = abs(getattr(self, 'fake_B') - getattr(self, 'real_B')) * self.Y_SCALE
+        visual_ret['fake_B_L1_err'] = butils.rescale_image(
+            abs(getattr(self, 'fake_B') - getattr(self, 'real_B')),
+            input_domain=None, output_domain=[-1, 1], clip_input=True
+        )
         for name in self.visual_names:
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)
@@ -160,8 +163,10 @@ class Pix2PixBioModel(BaseModel):
     
     def calculate_RMSE(self):
         """Calculate RMSE of generated image against ground truth"""
-        fake_B = butils.rescale_image(self.fake_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
-        real_B = butils.rescale_image(self.real_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
+        # fake_B = butils.rescale_image(self.fake_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
+        # real_B = butils.rescale_image(self.real_B, input_domain=[-1, 1], output_domain=[0, self.Y_SCALE])
+        fake_B = butils.rescale_image(self.fake_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
+        real_B = butils.rescale_image(self.real_B, input_domain=[0, 1], output_domain=[0, self.Y_SCALE])
 
         # DEBUG
         # butils.summarize_data(fake_B, 'RMSE fake image')

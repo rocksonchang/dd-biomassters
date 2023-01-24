@@ -49,7 +49,7 @@ class EncodeDecodeBioModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_L1', 'G_L2', 'RMSE']
+        self.loss_names = ['G_L1', 'G_L2', 'G', 'MSE']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
@@ -87,9 +87,10 @@ class EncodeDecodeBioModel(BaseModel):
 
     def backward_G(self):
         """Calculate loss for the generator"""
-        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
-        self.loss_G_L2 = self.criterionL2(self.fake_B, self.real_B) * self.opt.lambda_L2
-        self.loss_G = self.loss_G_L1 + self.loss_G_L2
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B)
+        self.loss_G_L2 = self.criterionL2(self.fake_B, self.real_B)
+        self.loss_G = self.loss_G_L1*self.opt.lambda_L1 + self.loss_G_L2*self.opt.lambda_L2
+        self.loss_MSE = self.loss_G_L2 * self.Y_SCALE**2
         self.loss_G.backward()
 
     def optimize_parameters(self):
@@ -101,7 +102,10 @@ class EncodeDecodeBioModel(BaseModel):
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
         visual_ret = OrderedDict()
-        visual_ret['fake_B_L1_err'] = abs(getattr(self, 'fake_B') - getattr(self, 'real_B')) * self.Y_SCALE
+        visual_ret['fake_B_L1_err'] = butils.rescale_image(
+            abs(getattr(self, 'fake_B') - getattr(self, 'real_B')),
+            input_domain=None, output_domain=[-1, 1], clip_input=True
+        )
         for name in self.visual_names:
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)

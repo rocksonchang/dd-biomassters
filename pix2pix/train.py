@@ -20,6 +20,7 @@ See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-a
 """
 from copy import deepcopy
 import time
+import numpy as np
 from options.train_options import TrainOptions
 from data import create_dataset
 from models import create_model
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     # load validation dataset
     validation_opt = deepcopy(opt)
     validation_opt.phase = 'validation'
-    validation_opt.max_dataset_size = 16
+    validation_opt.max_dataset_size = 32
     validation_opt.batch_size = validation_opt.max_dataset_size
     validation_opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
     validation_opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
@@ -52,6 +53,7 @@ if __name__ == '__main__':
         epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
         visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
         model.update_learning_rate()    # update learning rates in the beginning of every epoch.
+        losses = {k:0 for k in model.loss_names} # keep track of overall loss in an epoch
         for i, data in enumerate(dataset):  # inner loop within one epoch
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % opt.print_freq == 0:
@@ -63,6 +65,10 @@ if __name__ == '__main__':
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
+            losses_current = model.get_current_losses()
+            for k in model.loss_names:
+                losses[k] += losses_current[k]
+
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
             # if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
 
@@ -71,10 +77,12 @@ if __name__ == '__main__':
                 # training results
                 model.compute_visuals()
                 visuals = model.get_current_visuals()
-                model.calculate_RMSE()
+                # model.calculate_RMSE()
                 if 'acc_D_fake' in model.loss_names and 'acc_D_real' in model.loss_names:
                     model.calculate_accuracy()
-                losses = model.get_current_losses()
+                # losses = model.get_current_losses()
+                losses = {k:v/(opt.display_freq//opt.batch_size) for k,v in losses.items()}
+                losses['RMSE'] = np.sqrt(losses['MSE'])
                 real_B_hist, fake_B_hist, err_B_hist = model.return_distributions()
 
                 # validation results
@@ -91,7 +99,7 @@ if __name__ == '__main__':
                         model.calculate_accuracy()
                         losses['acc_D_fake_validation'] = model.get_current_losses()['acc_D_fake']
                         losses['acc_D_real_validation'] = model.get_current_losses()['acc_D_real']
-                    losses['RMSE_validation'] = model.get_current_losses()['RMSE']
+                    losses['RMSE_validation'] = model.loss_RMSE
 
                 validation_real_B_hist, validation_fake_B_hist, validation_err_B_hist = model.return_distributions()
 
@@ -103,6 +111,9 @@ if __name__ == '__main__':
                     visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
                     visualizer.plot_distribution(real_B_hist, fake_B_hist, err_B_hist, 'train')
                     visualizer.plot_distribution(validation_real_B_hist, validation_fake_B_hist, validation_err_B_hist, 'validation')
+
+                for k in losses:
+                    losses[k] = 0
 
             if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
                 print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
